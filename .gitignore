@@ -88,3 +88,15 @@ target/
 
 # Virtual environment
 .venv/
+
+# ML experiment outputs
+experiments/
+
+# PyTorch models
+*.pt
+*.pth
+*.ckpt
+
+# TensorBoard logs
+runs/
+logs/
