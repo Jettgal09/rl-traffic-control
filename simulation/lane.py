@@ -33,7 +33,7 @@ class Lane:
         self.direction = direction
         self.lane_index = lane_index
         self.stop_line = stop_line
-        self.vehicles = []    # front of queue is at index 0
+        self.vehicles = []  # front of queue is at index 0
 
     def add_vehicle(self, vehicle):
         """
@@ -57,34 +57,28 @@ class Lane:
     def update(self, light_is_green: bool):
         """
         Update all vehicles in this lane for one simulation step.
-
-        PARAMETERS:
-          light_is_green — whether this lane's traffic light is currently green
-
-        For each vehicle we check two things:
-          1. Is the light green?
-          2. Is there enough space between it and the vehicle ahead?
-        Both must be True for the vehicle to move.
         """
         for i, vehicle in enumerate(self.vehicles):
             if not vehicle.active:
                 continue
 
-            # Check space between this vehicle and the one ahead of it
             space_ahead = self._has_space_ahead(i)
 
-            # The front vehicle (index 0) also checks the stop line
-            # If it's at the stop line and light is red — it cannot move
             if i == 0:
+                # Front vehicle — check if it's at the stop line
                 at_stop = self._is_at_stop_line(vehicle)
+
                 if at_stop and not light_is_green:
+                    # At the stop line AND light is red — must stop
                     can_move = False
                 else:
-                    can_move = light_is_green
+                    # Either not at stop line yet, OR light is green
+                    # Either way — can move forward
+                    can_move = True
             else:
-                # Vehicles behind the front just follow the car ahead
-                # They don't directly check the light — they just check space
-                can_move = light_is_green
+                # Vehicles behind just follow the car ahead
+                # They move freely until they get too close to the car in front
+                can_move = True
 
             vehicle.update(can_move=can_move, space_ahead=space_ahead)
 
@@ -100,10 +94,10 @@ class Lane:
         We use 1.5x so vehicles don't drive into each other's back bumper.
         """
         if vehicle_index == 0:
-            return True   # Nothing blocking the front vehicle
+            return True  # Nothing blocking the front vehicle
 
         vehicle = self.vehicles[vehicle_index]
-        leader  = self.vehicles[vehicle_index - 1]   # vehicle directly ahead
+        leader = self.vehicles[vehicle_index - 1]  # vehicle directly ahead
 
         min_gap = SimConfig.VEHICLE_LENGTH * 1.5
 
@@ -154,7 +148,7 @@ class Lane:
             # Westbound vehicles approach from the right
             return vehicle.x <= self.stop_line + threshold
         return False
-    
+
     def queue_length(self) -> int:
         """
         How many vehicles are currently stopped in this lane.
