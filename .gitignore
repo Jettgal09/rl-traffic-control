@@ -7,7 +7,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-env/
+# env/
 build/
 develop-eggs/
 dist/
@@ -100,3 +100,6 @@ experiments/
 # TensorBoard logs
 runs/
 logs/
+
+# Test Files
+test_sandbox.py
