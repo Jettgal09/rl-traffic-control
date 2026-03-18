@@ -539,3 +539,75 @@ This motivates:
 - Potential-based reward shaping
 - Multi-intersection coordination (Phase 2)
 
+## First Working Results — Duration-Based Action Space
+
+| Algorithm   | Avg Waiting  | Avg Queue | Spawned |
+|-------------|-------------|-----------|---------|
+| Fixed Timer | 15,578,184  | 33.97     | 900     |
+| DQN (500k)  | 15,102,202  | 31.49     | 920     |
+
+DQN improvement over Fixed Timer:
+  Waiting time: 3.1% reduction
+  Queue length: 7.3% reduction  
+  Throughput:   2.2% more vehicles processed
+
+DQN learned a 60-step fixed policy — better than 30-step baseline.
+Not fully adaptive yet but genuinely outperforms baseline.
+
+## Progress Across System Iterations
+
+### Old System (binary action space, reward V1)
+| Algorithm   | Avg Waiting  | Avg Queue | Spawned |
+|-------------|-------------|-----------|---------|
+| Fixed Timer | 22,391,196  | 39.87     | 811     |
+| DQN (120k)  | 37,450,880  | 50.13     | 668     |
+
+### New System (duration action space, reward V5)
+| Algorithm   | Avg Waiting  | Avg Queue | Spawned |
+|-------------|-------------|-----------|---------|
+| Fixed Timer | 15,578,184  | 33.97     | 900     |
+| DQN (500k)  | 15,102,202  | 31.49     | 920     |
+
+Key improvements from redesign:
+1. Fixed timer improved too — because MAX_RED_DURATION=100 forces
+   balanced switching, preventing permanent EW starvation
+2. DQN now beats fixed timer — first time in entire project
+3. Overall waiting time dropped ~30% just from better simulation design
+4. Spawned vehicles increased from 811 to 900+ — simulation flows better
+
+This shows that simulation design matters as much as algorithm choice.
+The duration-based action space fundamentally changed what the agent
+could learn.
+
+## Current Algorithm Rankings (500k steps, duration action space)
+
+| Algorithm   | Best Eval Reward | Status        |
+|-------------|-----------------|---------------|
+| PPO         | -2,448          | ✅ Complete   |
+| DQN         | -2,499          | ✅ Complete   |
+| Fixed Timer | baseline        | ✅ Reference  |
+| A2C         | TBD             | 🔜 Training   |
+
+PPO is currently winning — better than DQN by ~2%.
+Both beat fixed timer baseline.
+
+## FINAL RESULTS — Duration-Based Action Space
+
+| Algorithm   | Avg Waiting  | Avg Queue | Spawned | vs Baseline |
+|-------------|-------------|-----------|---------|-------------|
+| Fixed Timer | 15,248,102  | 33.02     | 898     | baseline    |
+| DQN         | 14,048,423  | 31.30     | 924     | -7.9%       |
+| PPO         | 13,808,619  | 31.09     | 924     | -9.4%       |
+| A2C         | 13,663,147  | 30.76     | 923     | -10.4% ✅   |
+
+ALL THREE RL algorithms outperform the fixed timer baseline.
+A2C achieved the best overall performance.
+
+Key metrics improvement (best RL vs baseline):
+  Waiting time reduced: 10.4%
+  Queue length reduced: 6.8%
+  Throughput increased: 2.8% (923 vs 898 vehicles)
+
+Winner: A2C — fastest updates (every 5 steps) proved most effective
+        for learning phase duration timing.
+

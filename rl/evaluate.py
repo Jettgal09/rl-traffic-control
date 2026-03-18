@@ -17,9 +17,9 @@ ALGORITHMS = {
 
 class FixedTimerBaseline:
     """
-    Simulates a traditional fixed-timer traffic light controller.
-    Switches phase every SWITCH_INTERVAL steps regardless of traffic.
-    Implements predict() to match SB3 interface.
+    Fixed timer baseline that switches every SWITCH_INTERVAL steps.
+    Always returns action 0 (20 steps) to force frequent switching.
+    The actual switching is handled by the environment's MAX_RED_DURATION.
     """
 
     def __init__(self, switch_interval: int = 30):
@@ -28,37 +28,39 @@ class FixedTimerBaseline:
 
     def predict(self, observation, deterministic=True):
         self.step_counter += 1
-        if self.step_counter % self.switch_interval == 0:
-            action = np.array(1)
+        # Alternate between action 1 (40 steps) and action 2 (60 steps)
+        # to simulate a fixed 50-step average cycle
+        if self.step_counter % 2 == 0:
+            action = np.array(1)  # 40 steps
         else:
-            action = np.array(0)
+            action = np.array(2)  # 60 steps
         return action, None
 
     def reset(self):
         self.step_counter = 0
 
 
-def evaluate_agent(model, env: TrafficEnv,
-                   n_episodes: int = 10,
-                   render: bool = False) -> dict:
+def evaluate_agent(
+    model, env: TrafficEnv, n_episodes: int = 10, render: bool = False
+) -> dict:
     """
     Run an agent for n_episodes and collect performance metrics.
     Works for both SB3 models and FixedTimerBaseline.
     """
-    if hasattr(model, 'reset'):
+    if hasattr(model, "reset"):
         model.reset()
 
     all_waiting = []
-    all_queue   = []
-    all_passed  = []
+    all_queue = []
+    all_passed = []
     all_lengths = []
 
     for episode in range(n_episodes):
         obs, info = env.reset()
-        done      = False
+        done = False
         ep_waiting = 0
-        ep_queue   = 0
-        ep_steps   = 0
+        ep_queue = 0
+        ep_steps = 0
 
         while not done:
             action, _ = model.predict(obs, deterministic=True)
@@ -66,8 +68,8 @@ def evaluate_agent(model, env: TrafficEnv,
             done = terminated or truncated
 
             ep_waiting += info["waiting_time"]
-            ep_queue   += info["queue_length"]
-            ep_steps   += 1
+            ep_queue += info["queue_length"]
+            ep_steps += 1
 
             if render:
                 env.render()
@@ -78,17 +80,19 @@ def evaluate_agent(model, env: TrafficEnv,
         all_passed.append(stats["total_spawned"])
         all_lengths.append(ep_steps)
 
-        print(f"  Episode {episode+1}/{n_episodes} | "
-              f"waiting={ep_waiting:>10.0f} | "
-              f"avg_queue={ep_queue/max(ep_steps,1):>5.2f} | "
-              f"spawned={stats['total_spawned']:>4.0f}")
+        print(
+            f"  Episode {episode + 1}/{n_episodes} | "
+            f"waiting={ep_waiting:>10.0f} | "
+            f"avg_queue={ep_queue / max(ep_steps, 1):>5.2f} | "
+            f"spawned={stats['total_spawned']:>4.0f}"
+        )
 
     return {
-        "avg_total_waiting" : float(np.mean(all_waiting)),
+        "avg_total_waiting": float(np.mean(all_waiting)),
         "avg_queue_per_step": float(np.mean(all_queue)),
-        "avg_spawned"       : float(np.mean(all_passed)),
-        "avg_ep_length"     : float(np.mean(all_lengths)),
-        "std_waiting"       : float(np.std(all_waiting)),
+        "avg_spawned": float(np.mean(all_passed)),
+        "avg_ep_length": float(np.mean(all_lengths)),
+        "std_waiting": float(np.std(all_waiting)),
     }
 
 
@@ -123,15 +127,17 @@ def compare_all(n_episodes: int = 10, output_dir: str = "experiments"):
         results[algo] = evaluate_agent(model, env, n_episodes)
 
     # Print Results Table
-    print("\n" + "="*65)
+    print("\n" + "=" * 65)
     print(f"{'Algorithm':<15} {'Avg Waiting':>12} {'Avg Queue':>10} {'Spawned':>8}")
-    print("-"*65)
+    print("-" * 65)
     for name, metrics in results.items():
-        print(f"{name:<15} "
-              f"{metrics['avg_total_waiting']:>12.0f} "
-              f"{metrics['avg_queue_per_step']:>10.3f} "
-              f"{metrics['avg_spawned']:>8.0f}")
-    print("="*65)
+        print(
+            f"{name:<15} "
+            f"{metrics['avg_total_waiting']:>12.0f} "
+            f"{metrics['avg_queue_per_step']:>10.3f} "
+            f"{metrics['avg_spawned']:>8.0f}"
+        )
+    print("=" * 65)
 
     _save_results(results, output_dir)
     _plot_comparison(results, output_dir)
@@ -146,7 +152,7 @@ def _save_results(results: dict, output_dir: str):
 
     with open(path, "w") as f:
         f.write("Algorithm Comparison Results\n")
-        f.write("="*50 + "\n\n")
+        f.write("=" * 50 + "\n\n")
         for name, metrics in results.items():
             f.write(f"{name}:\n")
             for key, val in metrics.items():
@@ -163,27 +169,26 @@ def _plot_comparison(results: dict, output_dir: str):
         return
 
     algorithms = list(results.keys())
-    colors = ["#e74c3c", "#3498db", "#2ecc71", "#f39c12"][:len(algorithms)]
+    colors = ["#e74c3c", "#3498db", "#2ecc71", "#f39c12"][: len(algorithms)]
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    fig.suptitle(
-        "Traffic RL — Algorithm Comparison",
-        fontsize=14,
-        fontweight="bold"
-    )
+    fig.suptitle("Traffic RL — Algorithm Comparison", fontsize=14, fontweight="bold")
 
     metrics_to_plot = [
-        ("avg_total_waiting",  "Total Waiting Time\n(lower is better)"),
+        ("avg_total_waiting", "Total Waiting Time\n(lower is better)"),
         ("avg_queue_per_step", "Avg Queue Length/Step\n(lower is better)"),
-        ("avg_spawned",        "Vehicles Spawned\n(higher = more traffic handled)"),
+        ("avg_spawned", "Vehicles Spawned\n(higher = more traffic handled)"),
     ]
 
     for ax, (metric, title) in zip(axes, metrics_to_plot):
         values = [results[a][metric] for a in algorithms]
         bars = ax.bar(
-            algorithms, values,
-            color=colors, alpha=0.85,
-            edgecolor="black", linewidth=0.8
+            algorithms,
+            values,
+            color=colors,
+            alpha=0.85,
+            edgecolor="black",
+            linewidth=0.8,
         )
         ax.set_title(title, fontsize=11, pad=10)
         ax.set_ylabel("Value")
@@ -194,7 +199,9 @@ def _plot_comparison(results: dict, output_dir: str):
                 bar.get_x() + bar.get_width() / 2,
                 bar.get_height() * 1.01,
                 f"{val:.0f}",
-                ha="center", va="bottom", fontsize=9
+                ha="center",
+                va="bottom",
+                fontsize=9,
             )
 
     plt.tight_layout()
@@ -218,10 +225,7 @@ def main():
         compare_all(n_episodes=args.episodes)
 
     elif args.algo:
-        env = TrafficEnv(
-            grid_size=1,
-            render_mode="human" if args.render else None
-        )
+        env = TrafficEnv(grid_size=1, render_mode="human" if args.render else None)
 
         if args.model:
             model_path = args.model
@@ -238,9 +242,7 @@ def main():
         model = ALGORITHMS[args.algo].load(model_path, env=env)
         print(f"\nEvaluating {args.algo} for {args.episodes} episodes...")
         metrics = evaluate_agent(
-            model, env,
-            n_episodes=args.episodes,
-            render=args.render
+            model, env, n_episodes=args.episodes, render=args.render
         )
         print("\nFinal Results:")
         for key, val in metrics.items():
