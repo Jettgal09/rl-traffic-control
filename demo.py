@@ -233,7 +233,7 @@ class DemoRunner:
             f"Waiting  : {total_waiting:>10,.0f}",
             f"Avg Queue: {avg_queue:>8.1f} vehicles",
             f"Spawned  : {spawned:>5}",
-            f"",
+            "",
             f"N:{queues['N']:>3}  S:{queues['S']:>3}",
             f"E:{queues['E']:>3}  W:{queues['W']:>3}",
         ]
