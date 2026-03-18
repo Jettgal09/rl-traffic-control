@@ -75,8 +75,8 @@ class TrafficEnv(gym.Env):
         )
 
         # --- ACTION SPACE ---
-        # Discrete(2) means two possible actions: 0 or 1
-        self.action_space = spaces.Discrete(2)
+        # Discrete(4) means four possible actions: 0, 1, 2, or 3
+        self.action_space = spaces.Discrete(4)
 
         # Episode tracking
         self.current_step = 0
@@ -145,31 +145,23 @@ class TrafficEnv(gym.Env):
           truncated   — True if we hit MAX_STEPS_PER_EPISODE
           info        — dict with extra metrics for logging
         """
-        # Step 1 — apply action to simulation
+        # Apply action — only takes effect at start of green phase
         self.road.apply_action(action, intersection_idx=0)
 
-        # Step 2 — advance the simulation world by one tick
+        # Advance simulation
         self.road.step()
         self.current_step += 1
 
-        # Step 3 — calculate reward based on resulting state
         reward = self._calculate_reward()
 
-        # Step 4 — accumulate episode metrics for logging
         metrics = self.road.get_metrics()
         self.episode_waiting_time += metrics["total_waiting_time"]
         self.episode_queue_sum += metrics["total_queue_length"]
 
-        # Step 5 — check if episode is over
         terminated = False
         truncated = self.current_step >= self.max_steps
-
-        # Step 6 — build observation of new state
         obs = self._get_observation()
 
-        # Step 7 — build info dict
-        # This is not used by the RL algorithm itself
-        # but gets logged for our analysis
         info = {
             "step": self.current_step,
             "waiting_time": metrics["total_waiting_time"],
@@ -191,10 +183,15 @@ class TrafficEnv(gym.Env):
 
     def _calculate_reward(self) -> float:
         """
-        Reward function v3 — queue-based with throughput bonus.
+        Reward V5 — designed for duration-based action space.
+
+        Since the agent now controls phase duration rather than
+        moment-to-moment switching, we reward based on queue balance
+        and throughput. No yellow/all-red penalty issue exists anymore
+        because the agent doesn't trigger transitions directly.
         """
         max_v = SimConfig.MAX_VEHICLES
-        inter  = self.road.intersections[0]
+        inter = self.road.intersections[0]
         queues = inter.get_queue_lengths()
 
         ns_queue = queues["N"] + queues["S"]
@@ -203,16 +200,10 @@ class TrafficEnv(gym.Env):
         # Penalty for total queue
         queue_penalty = (ns_queue + ew_queue) / max_v
 
-        # Heavy imbalance penalty
-        imbalance_penalty = (abs(ns_queue - ew_queue) / max_v) * 3.0
+        # Imbalance penalty — heavily penalize unequal treatment
+        imbalance_penalty = (abs(ns_queue - ew_queue) / max_v) * 2.0
 
-        # Throughput bonus — vehicles passed THIS step (delta not cumulative)
-        current_passed = inter.total_vehicles_passed
-        new_passed = current_passed - self._prev_passed
-        self._prev_passed = current_passed
-        throughput_bonus = min(new_passed / 10.0, 0.5)
-
-        reward = -(queue_penalty + imbalance_penalty) + throughput_bonus
+        reward = -(queue_penalty + imbalance_penalty)
 
         return float(reward)
 
