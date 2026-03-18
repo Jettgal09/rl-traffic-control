@@ -104,20 +104,24 @@ class Road:
 
     def apply_action(self, action: int, intersection_idx: int = 0):
         """
-        Apply the RL agent's action to one intersection.
+        Apply RL agent's action to one intersection.
 
         ACTION SPACE:
-          0 → do nothing, keep current phase
-          1 → request a phase switch
+          0 → set green duration to 20 steps (short — high traffic)
+          1 → set green duration to 40 steps (medium)
+          2 → set green duration to 60 steps (long)
+          3 → set green duration to 80 steps (very long — low traffic)
 
-        PARAMETERS:
-          action           — integer from RL agent (0 or 1)
-          intersection_idx — which intersection to control
-                             always 0 in Phase 1
+        Agent sets duration at start of each green phase.
+        Light automatically switches after that duration.
         """
-        if action == 1:
-            self.intersections[intersection_idx].request_phase_switch()
-        # action == 0 means do nothing — no code needed
+        from simulation.traffic_light import DURATION_OPTIONS
+
+        if intersection_idx < len(self.intersections):
+            inter = self.intersections[intersection_idx]
+            if inter.is_start_of_green_phase():
+                duration = DURATION_OPTIONS[action]
+                inter.set_phase_duration(duration)
 
     def reset(self):
         """

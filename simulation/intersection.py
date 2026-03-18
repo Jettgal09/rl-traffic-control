@@ -229,12 +229,16 @@ class Intersection:
         ]
         return obs
 
-    def request_phase_switch(self):
+    def set_phase_duration(self, duration: int):
         """
-        Called by the RL agent when it decides to switch phases.
-        Just passes the request down to the traffic light.
+        Called by RL agent to set how long the current green phase lasts.
+        Only has effect at the start of a green phase.
         """
-        self.traffic_light.request_switch()
+        self.traffic_light.set_green_duration(duration)
+
+    def is_start_of_green_phase(self) -> bool:
+        """Returns True on first step of a new green phase."""
+        return self.traffic_light.is_start_of_green_phase()
 
     def add_vehicle_to_lane(self, vehicle, direction: str, lane_index: int = 0):
         """
