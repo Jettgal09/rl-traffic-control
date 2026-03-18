@@ -7,6 +7,8 @@
 from enum import IntEnum
 from utils.config import SimConfig
 
+MAX_RED_DURATION = 100  # Maximum steps any direction can stay red to prevent starvation
+
 
 class Phase(IntEnum):
     """
@@ -79,27 +81,29 @@ class TrafficLight:
         """
         Called every simulation step. Advances the light through its cycle.
 
-        Two different behaviors depending on what phase we're in:
-        - Green phase: only switch if agent requested it AND min time has passed
-        - Yellow/All-red: switch automatically when the fixed duration expires
+        Two behaviors:
+        - Green phase: switch if agent requested AND min time passed
+                       OR force switch if max red duration exceeded
+        - Yellow/All-red: switch automatically when duration expires
         """
-        # Always count how long we've been in the current phase
         self.phase_timer += 1
 
         if self._is_green_phase():
-            # We are in a green phase — only the RL agent can trigger a switch
-            # BUT only if the light has been green for the minimum required time
             agent_wants_switch = self.switch_requested
             been_green_long_enough = self.phase_timer >= SimConfig.MIN_GREEN_DURATION
+            been_green_too_long = self.phase_timer >= MAX_RED_DURATION
 
-            if agent_wants_switch and been_green_long_enough:
+            if been_green_too_long:
+                # Force switch — opposing direction waited too long
                 self._advance_phase()
-                self.switch_requested = False  # Reset the flag
-
+                self.switch_requested = False
+            elif agent_wants_switch and been_green_long_enough:
+                # Agent requested switch and minimum time met
+                self._advance_phase()
+                self.switch_requested = False
         else:
-            # We are in yellow or all-red — switch automatically by time
+            # Yellow and all-red switch automatically by time
             required_duration = PHASE_DURATION[self.phase]
-
             if self.phase_timer >= required_duration:
                 self._advance_phase()
 

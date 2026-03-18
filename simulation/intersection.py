@@ -16,7 +16,7 @@
 
 from simulation.traffic_light import TrafficLight
 from simulation.lane import Lane
-from utils.config import SimConfig
+from utils.config import SimConfig, VisualizationConfig
 
 
 class Intersection:
@@ -82,45 +82,79 @@ class Intersection:
         return lanes
 
     def update(self):
-        """
-        Advance the intersection by one simulation step.
-
-        ORDER MATTERS here:
-          1. Update the traffic light first — it might change phase
-          2. Read the new phase — is NS green or EW green?
-          3. Update all lanes with that green/red information
-          4. Clean up vehicles that have exited
-        """
-        # Step 1 — tick the traffic light forward
         self.traffic_light.update()
 
-        # Step 2 — which directions currently have green?
         ns_green = self.traffic_light.is_green_for("N")
         ew_green = self.traffic_light.is_green_for("E")
 
-        # Step 3 — update each lane with its current light state
         for direction, lane_list in self.lanes.items():
-            # N and S share the same light state
-            # E and W share the same light state
             if direction in ("N", "S"):
                 light_is_green = ns_green
             else:
                 light_is_green = ew_green
-
             for lane in lane_list:
                 lane.update(light_is_green)
 
-        # Step 4 — clean up vehicles that have left the simulation
+        # Move vehicles that crossed stop line into crossing list
+        self._process_lane_exits()
+
+        # Update crossing vehicles — they always move, never stop
+        for vehicle in self.crossing_vehicles:
+            vehicle.update(can_move=True, space_ahead=True)
+
         self._cleanup_inactive()
 
+    def _process_lane_exits(self):
+        """
+        Check if the front vehicle in any lane has reached the
+        stop line with a green light — if so move it into
+        crossing_vehicles so it passes through without stopping.
+        """
+        for direction, lane_list in self.lanes.items():
+            light_green = self.traffic_light.is_green_for(direction)
+            if not light_green:
+                continue
+
+            for lane in lane_list:
+                if not lane.vehicles:
+                    continue
+
+                front = lane.vehicles[0]
+                if self._past_stop_line(front, direction):
+                    lane.vehicles.pop(0)
+                    self.crossing_vehicles.append(front)
+
+    def _past_stop_line(self, vehicle, direction: str) -> bool:
+        """Returns True if vehicle has crossed the stop line."""
+        half_box = self.box_size / 2
+        if direction == "N":
+            return vehicle.y <= self.cy + half_box
+        elif direction == "S":
+            return vehicle.y >= self.cy - half_box
+        elif direction == "E":
+            return vehicle.x >= self.cx - half_box
+        elif direction == "W":
+            return vehicle.x <= self.cx + half_box
+        return False
+
     def _cleanup_inactive(self):
-        """
-        Remove vehicles that have driven off the map.
-        Count each one as successfully passed through.
-        """
+        """Remove vehicles that have driven off the map."""
+        # Clean lanes
         for lane_list in self.lanes.values():
             for lane in lane_list:
                 lane.cleanup_inactive()
+
+        # Check crossing vehicles against map bounds
+        still_crossing = []
+        for vehicle in self.crossing_vehicles:
+            if vehicle.is_out_of_bounds(
+                VisualizationConfig.WINDOW_WIDTH, VisualizationConfig.WINDOW_HEIGHT
+            ):
+                vehicle.deactivate()
+                self.total_vehicles_passed += 1
+            else:
+                still_crossing.append(vehicle)
+        self.crossing_vehicles = still_crossing
 
     def get_queue_lengths(self) -> dict:
         """
@@ -177,6 +211,10 @@ class Intersection:
             for direction, lane_list in self.lanes.items()
         }
 
+        # Normalize phase timer — cap at 100 steps
+        normalized_timer = min(self.traffic_light.phase_timer / 100.0, 1.0)
+
+
         obs = [
             queues["N"] / max_v,
             queues["S"] / max_v,
@@ -187,6 +225,7 @@ class Intersection:
             counts["E"] / max_v,
             counts["W"] / max_v,
             self.traffic_light.phase / 5.0,  # normalize 0-5 to 0-1
+            normalized_timer,
         ]
         return obs
 

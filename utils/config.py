@@ -44,9 +44,9 @@ class SimConfig:
     # --- Traffic Light Timing ---
     # Once a light goes green, the RL agent cannot switch it for at least
     # this many steps. Prevents the agent from flickering lights every step.
-    MIN_GREEN_DURATION = 10
+    MIN_GREEN_DURATION = 15
 
-    YELLOW_DURATION = 5  # How many steps the yellow light lasts
+    YELLOW_DURATION = 4  # How many steps the yellow light lasts
     ALL_RED_DURATION = 2  # Brief all-red pause between phases (safety)
 
     # --- Episode Length ---
@@ -84,7 +84,7 @@ class RLConfig:
     # --- DQN specific settings ---
     # (we will explain every one of these when we get to the DQN lesson)
     DQN_LEARNING_RATE = 1e-4
-    DQN_BUFFER_SIZE = 50_000
+    DQN_BUFFER_SIZE = 100_000
     DQN_BATCH_SIZE = 64
     DQN_GAMMA = 0.99
     DQN_EXPLORATION_FRACTION = 0.2
@@ -92,11 +92,12 @@ class RLConfig:
 
     # --- PPO specific settings ---
     PPO_LEARNING_RATE = 3e-4
-    PPO_N_STEPS = 2048
+    PPO_N_STEPS = 1024        # was 2048, more frequent updates
     PPO_BATCH_SIZE = 64
     PPO_N_EPOCHS = 10
     PPO_GAMMA = 0.99
     PPO_CLIP_RANGE = 0.2
+    PPO_ENT_COEF = 0.05       # ADD THIS — higher entropy = more exploration
 
     # --- A2C specific settings ---
     A2C_LEARNING_RATE = 7e-4
