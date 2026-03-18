@@ -611,3 +611,25 @@ Key metrics improvement (best RL vs baseline):
 Winner: A2C — fastest updates (every 5 steps) proved most effective
         for learning phase duration timing.
 
+## Future Work
+
+1. **Phase 2 — Multi-Intersection Grid**
+   Extend to 3×3 city grid (9 intersections).
+   Requires multi-agent RL or centralized controller
+   observing all 9 intersection states simultaneously.
+
+2. **Phase 3 — Advanced Vehicle Behavior**
+   Add turning logic, lane changing, pedestrian signals,
+   emergency vehicle priority.
+
+3. **Real Traffic Data Calibration**
+   Replace random spawning with real traffic flow data
+   from sensors or datasets (e.g. OpenStreetMap + SUMO).
+
+4. **Continuous Action Space**
+   Instead of 4 discrete durations, allow agent to set
+   any duration between 10-120 seconds continuously.
+
+5. **Transfer Learning**
+   Train on one intersection, transfer policy to new
+   intersections without retraining from scratch.
