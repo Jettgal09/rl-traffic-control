@@ -260,5 +260,3 @@ TRAIN_CONFIG = {
 - Research inspiration: *IntelliLight* (Wei et al., 2018) and *CoLight* (Wei et al., 2019)
 
 ---
-
-*Built as a research portfolio project for AI/ML internship applications (GSoC, MITACS, CERN openlab).*
