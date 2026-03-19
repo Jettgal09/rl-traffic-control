@@ -1,13 +1,13 @@
-
+<!-- markdownlint-disable -->
 # 🚦 Reinforcement Learning Based Adaptive Traffic Signal Control System
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.2-red.svg)](https://pytorch.org/)
-[![Stable-Baselines3](https://img.shields.io/badge/SB3-2.3-green.svg)](https://stable-baselines3.readthedocs.io/)
-[![Gymnasium](https://img.shields.io/badge/Gymnasium-0.29-orange.svg)](https://gymnasium.farama.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.10-red.svg)](https://pytorch.org/)
+[![Stable-Baselines3](https://img.shields.io/badge/SB3-2.7.1-green.svg)](https://stable-baselines3.readthedocs.io/)
+[![Gymnasium](https://img.shields.io/badge/Gymnasium-1.2.3-orange.svg)](https://gymnasium.farama.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](#)
 
-A research-grade reinforcement learning system for adaptive traffic signal optimization. Trains RL agents (DQN, PPO, A2C) to control traffic lights across a multi-intersection city grid, minimizing vehicle waiting times and queue lengths.
+A research-grade reinforcement learning system for adaptive traffic signal optimization. Trains RL agents (DQN, PPO, A2C) to control traffic light phase durations at a 4-way intersection, minimizing vehicle waiting times and queue lengths compared to a fixed-timer baseline.
 
 ---
 
@@ -32,12 +32,12 @@ Traditional traffic signals operate on fixed timers regardless of real-time traf
 
 ### Key Features
 
-- **Multi-intersection simulation** — 3×3 city grid (9 intersections) with realistic vehicle spawning, lane-following, and routing
-- **Gym-compatible environment** — clean `TrafficEnv` interface for easy algorithm swapping
-- **Three RL algorithms** — DQN, PPO, A2C all benchmarked against a fixed-timer baseline
-- **Modular architecture** — simulation, environment, training, and visualization are fully decoupled
-- **Full observability** — TensorBoard logging, CSV metrics, Matplotlib comparison plots
-- **Pygame visualization** — real-time rendering with color-coded traffic lights and vehicle states
+- **Duration-based action space** — agent chooses green phase duration (20/40/60/80 steps) rather than binary switch decisions
+- **Gym-compatible environment** — clean TrafficEnv interface for easy algorithm swapping
+- **Three RL algorithms** — DQN, PPO, A2C all benchmarked against fixed-timer baseline
+- **Reward function iteration** — 5 reward versions developed to solve degenerate policy problems
+- **Pygame visualization** — real-time demo with color-coded vehicles and traffic lights
+- **Demo mode** — side-by-side Fixed Timer vs RL Agent comparison
 
 ---
 
@@ -73,116 +73,105 @@ Traditional traffic signals operate on fixed timers regardless of real-time traf
 
 ### State Space
 
-For each intersection (9 total in a 3×3 grid):
-```
-[queue_N, queue_S, queue_E, queue_W, signal_phase]  →  45-dim vector
-```
+For each intersection (10-dimensional observation vector):
+````
+[queue_N, queue_S, queue_E, queue_W,    # Stopped vehicles per direction (normalized)
+ count_N, count_S, count_E, count_W,    # Total vehicles per direction (normalized)
+ phase_id, phase_timer]                  # Current signal phase and duration
+````
 
 ### Action Space
 
 ```
-MultiDiscrete([2, 2, ..., 2])  — 9 binary decisions
-  0 = maintain current phase
-  1 = request phase switch
+Discrete(4) — agent selects green phase duration at start of each phase:
+  0 → 20 steps green  (short — high opposing traffic)
+  1 → 40 steps green  (medium)
+  2 → 60 steps green  (long)  
+  3 → 80 steps green  (very long — low opposing traffic)
 ```
 
 ### Reward Function
-
-```python
-reward = -(total_waiting_time + queue_length)   # composite mode
 ```
+reward = -(queue_penalty + 2.0 × imbalance_penalty)
+```
+Penalizes both total congestion and unequal treatment of directions.
+Five reward versions were developed during research (V1→V5).
 
 ---
 
 ## Installation
-
 ```bash
-git clone https://github.com/yourusername/traffic-rl-project.git
-cd traffic-rl-project
-pip install -r requirements.txt
+git clone https://github.com/yourusername/rl-traffic-system.git
+cd rl-traffic-system
+uv sync
 ```
 
-**Requirements:** Python 3.10+, CUDA optional (CPU training is supported)
+**Requirements:** Python 3.12, CUDA optional (CPU training supported)
 
 ---
 
 ## Quick Start
 
-### Run a Quick Demo (no training)
-
+### Run Expo Demo (Fixed Timer vs RL Agent)
 ```bash
-python -c "
-from env.traffic_env import TrafficEnv
-import numpy as np
-
-env = TrafficEnv(render_mode='human')
-obs, _ = env.reset()
-for _ in range(500):
-    action = env.action_space.sample()
-    obs, reward, _, done, info = env.step(action)
-    if done: break
-env.close()
-"
+uv run python demo.py
 ```
 
-### Train PPO (recommended first run)
-
+### Train an Agent
 ```bash
-python rl/train.py --algo ppo --timesteps 500000
+uv run python -m rl.train --algo DQN --timesteps 500000
+uv run python -m rl.train --algo PPO --timesteps 500000
+uv run python -m rl.train --algo A2C --timesteps 500000
 ```
 
-### Monitor Training
-
+### Evaluate and Compare All Algorithms
 ```bash
-tensorboard --logdir experiments/
+uv run python -m rl.evaluate --compare --episodes 10
+```
+
+### View Learning Curves
+```bash
+uv run python plot_results.py
 ```
 
 ---
 
 ## Training
 
+Models, checkpoints, and logs are saved to `experiments/<algo>_results/`.
 ```bash
-# Train DQN
-python rl/train.py --algo dqn --timesteps 1000000
+# Quick test run (1k steps)
+uv run python -m rl.train --algo DQN --timesteps 1000
 
-# Train PPO with density observation
-python rl/train.py --algo ppo --obs density --reward composite
+# Full training run
+uv run python -m rl.train --algo DQN --timesteps 500000
 
-# Train A2C
-python rl/train.py --algo a2c --timesteps 500000
+# Heavy traffic experiment
+uv run python -m rl.train --algo DQN --spawn-rate 0.10 --timesteps 500000
 ```
-
-All models, checkpoints, and TensorBoard logs are saved to `experiments/<algo>_results/`.
 
 ---
 
 ## Evaluation
-
 ```bash
-# Evaluate a trained model vs fixed-timer baseline
-python rl/evaluate.py \
-  --model experiments/ppo_results/best_model/best_model.zip \
-  --algo ppo \
-  --baseline \
-  --n_episodes 20
+# Compare all trained algorithms vs fixed-timer baseline
+uv run python -m rl.evaluate --compare --episodes 10
+
+# Evaluate single algorithm with visualization
+uv run python -m rl.evaluate --algo DQN --render --episodes 5
 ```
-
-Outputs a comparison bar chart and `results.csv` to `experiments/eval_results/`.
-
----
 
 ## Results
 
-| Controller       | Mean Wait Time (s) | Mean Queue Length |
-|------------------|--------------------|-------------------|
-| Fixed Timer      | ~120               | ~18               |
-| DQN (trained)    | ~72                | ~11               |
-| PPO (trained)    | ~58                | ~9                |
-| A2C (trained)    | ~65                | ~10               |
+| Controller  | Avg Waiting Time | Avg Queue | Throughput | vs Baseline |
+|-------------|-----------------|-----------|------------|-------------|
+| Fixed Timer | 15,248,102      | 33.02     | 898 veh    | baseline    |
+| DQN         | 14,048,423      | 31.30     | 924 veh    | -7.9%       |
+| PPO         | 13,808,619      | 31.09     | 924 veh    | -9.4%       |
+| **A2C**     | **13,663,147**  | **30.76** | **923 veh**| **-10.4%**  |
 
-*Approximate values. Actual results depend on training duration and hyperparameters.*
-
----
+All three RL algorithms outperform the fixed-timer baseline.
+A2C achieved best performance: 10.4% reduction in waiting time.
 
 ## Project Structure
 
@@ -225,33 +214,33 @@ traffic-rl-project/
 
 ## Configuration
 
-All system parameters are in `utils/config.py`. Key settings:
-
+All parameters are centralized in `utils/config.py`:
 ```python
-SIM_CONFIG = {
-    "grid_size": (3, 3),       # Grid dimensions
-    "steps_per_episode": 1000, # Episode length
-    "spawn_rate": 0.05,        # Vehicle spawn probability per step
-}
+class SimConfig:
+    GRID_SIZE = 1                  # 1 = single intersection
+    SPAWN_RATE = 0.05              # Vehicle spawn probability per step
+    MIN_GREEN_DURATION = 15        # Minimum steps before phase can change
+    MAX_STEPS_PER_EPISODE = 3000   # Episode length
 
-TRAIN_CONFIG = {
-    "total_timesteps": 500_000,
-    "eval_freq": 10_000,
-}
+class RLConfig:
+    TOTAL_TIMESTEPS = 500_000
+    ALGORITHM = "DQN"
+    EVAL_FREQUENCY = 10_000
 ```
 
 ---
 
 ## Roadmap
 
-- [x] Phase 1 — Single intersection baseline environment
-- [x] Phase 2 — Multi-intersection 3×3 city grid  
-- [ ] Phase 3 — Left/right vehicle turning logic
+- [x] Phase 1 — Single intersection simulation engine
+- [x] Phase 1 — Gym-compatible RL environment  
+- [x] Phase 1 — DQN, PPO, A2C training and evaluation
+- [x] Phase 1 — Pygame visualization and expo demo
+- [x] Phase 1 — Reward function iteration (V1→V5)
+- [ ] Phase 2 — Multi-intersection 3×3 city grid
+- [ ] Phase 3 — Vehicle turning logic
 - [ ] Phase 4 — Congestion propagation between intersections
-- [ ] Phase 5 — SUMO integration for higher-fidelity simulation
-- [ ] Phase 6 — Multi-agent RL (each intersection = independent agent)
-
----
+- [ ] Phase 5 — Multi-agent RL coordination
 
 ## Acknowledgements
 
