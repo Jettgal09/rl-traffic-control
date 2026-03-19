@@ -11,14 +11,11 @@
 # USAGE:
 #   uv run python demo.py
 
-import time
 import sys
 import pygame
-import numpy as np
 from stable_baselines3 import A2C, DQN, PPO
 
 from env.traffic_env import TrafficEnv
-from visualization.pygame_renderer import PygameRenderer
 from utils.config import VisualizationConfig as VC, SimConfig
 
 
@@ -187,7 +184,6 @@ class DemoRunner:
         spawned,
     ):
         """Render one frame with simulation + overlay."""
-        from visualization.pygame_renderer import PygameRenderer
 
         # Draw simulation
         self.screen.fill(VC.COLOR_BACKGROUND)
