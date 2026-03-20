@@ -67,7 +67,7 @@ class TrafficEnv(gym.Env):
         # --- OBSERVATION SPACE ---
         # Tell Gymnasium exactly what shape and range our observations have.
         # This is how SB3 knows what size neural network input layer to create.
-        # 9 values per intersection, all between 0.0 and 1.0
+        # 10 values per intersection, all between 0.0 and 1.0
         obs_size = 10 * (grid_size * grid_size)
 
         self.observation_space = spaces.Box(
