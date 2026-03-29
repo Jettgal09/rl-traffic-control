@@ -22,3 +22,5 @@ dependencies = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["simulation*", "env*", "rl*", "utils*", "visualization*"]
+[tool.ruff]
+line-length = 120

@@ -21,7 +21,7 @@ from utils.config import VisualizationConfig as VC, SimConfig
 
 # --- DEMO CONFIGURATION ---
 STEPS_PER_MODE = 2500  # Steps to run each mode (1500 = ~50 seconds at 30fps)
-DEMO_FPS = 1000  # Frames per second
+DEMO_FPS = 60  # Frames per second
 SHOW_COMPARISON = True  # Show fixed timer first, then RL agent
 
 
