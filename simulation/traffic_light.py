@@ -1,21 +1,16 @@
 # simulation/traffic_light.py
-#
-# Models a single traffic light at one intersection.
-# This is a STATE MACHINE — it is always in exactly one phase,
-# and moves through phases in a fixed cycle.
+# Models a traffic light with duration-based phase control.
 
 from enum import IntEnum
 from utils.config import SimConfig
 
-# Phase duration options the RL agent can choose from (in steps)
+# Allowed green durations in steps. Agent can choose any of these at the start of a green phase.
 DURATION_OPTIONS = [20, 40, 60, 80]
-
-# Default green duration if agent hasn't set one yet
 DEFAULT_GREEN_DURATION = 40
+MAX_RED_DURATION = 100  # Forces a switch if one direction stays red too long
 
-MAX_RED_DURATION = 100
 
-
+# each phase is mapped to an integer for easy comparison and observation encoding
 class Phase(IntEnum):
     GREEN_NS = 0
     YELLOW_NS = 1
@@ -25,6 +20,7 @@ class Phase(IntEnum):
     ALL_RED_2 = 5
 
 
+# Maps each phase to the next one in the cycle
 PHASE_CYCLE = {
     Phase.GREEN_NS: Phase.YELLOW_NS,
     Phase.YELLOW_NS: Phase.ALL_RED_1,
@@ -34,6 +30,7 @@ PHASE_CYCLE = {
     Phase.ALL_RED_2: Phase.GREEN_NS,
 }
 
+# Fixed durations for yellow and all-red phases — green duration is set by the agent
 PHASE_DURATION = {
     Phase.YELLOW_NS: SimConfig.YELLOW_DURATION,
     Phase.ALL_RED_1: SimConfig.ALL_RED_DURATION,
@@ -44,14 +41,7 @@ PHASE_DURATION = {
 
 class TrafficLight:
     """
-    Traffic light with duration-based phase control.
-
-    Instead of the agent saying "switch now", it says
-    "keep this phase green for X steps" at the START
-    of each green phase.
-
-    This eliminates the yellow/all-red penalty problem
-    because the agent sets duration once and waits.
+    Represents a traffic light at the intersection.
     """
 
     def __init__(self):
@@ -60,20 +50,12 @@ class TrafficLight:
         self.current_green_duration = DEFAULT_GREEN_DURATION
 
     def set_green_duration(self, duration: int):
-        """
-        Agent calls this at the start of a green phase
-        to set how long it should last.
-
-        Only has effect during green phases.
-        """
         if self._is_green_phase():
             self.current_green_duration = max(SimConfig.MIN_GREEN_DURATION, duration)
 
     def update(self):
         """
-        Advance light by one step.
-        Green phases last exactly current_green_duration steps.
-        Yellow and all-red advance automatically.
+        Advances the light by one step — handles green, yellow and all-red phases.
         """
         self.phase_timer += 1
 
@@ -91,7 +73,6 @@ class TrafficLight:
     def _advance_phase(self):
         self.phase = PHASE_CYCLE[self.phase]
         self.phase_timer = 0
-        # Reset duration for next green phase
         if self._is_green_phase():
             self.current_green_duration = DEFAULT_GREEN_DURATION
 
@@ -103,10 +84,6 @@ class TrafficLight:
         return False
 
     def is_start_of_green_phase(self) -> bool:
-        """
-        Returns True on the very first step of a new green phase.
-        This is when the agent should set the duration.
-        """
         return self._is_green_phase() and self.phase_timer == 1
 
     def reset(self):
