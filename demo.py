@@ -21,7 +21,7 @@ from utils.config import VisualizationConfig as VC, SimConfig
 
 # --- DEMO CONFIGURATION ---
 STEPS_PER_MODE = 2500  # Steps to run each mode (1500 = ~50 seconds at 30fps)
-DEMO_FPS = 60  # Frames per second
+DEMO_FPS = 30  # Frames per second
 SHOW_COMPARISON = True  # Show fixed timer first, then RL agent
 
 
@@ -216,9 +216,7 @@ class DemoRunner:
         text = self.big_font.render(label, True, color)
         self.screen.blit(text, (20, 12))
 
-    def _draw_metrics(
-        self, step, total_steps, total_waiting, avg_queue, spawned, inter
-    ):
+    def _draw_metrics(self, step, total_steps, total_waiting, avg_queue, spawned, inter):
         """Draw metrics panel in bottom left."""
         queues = inter.get_queue_lengths()
         phase = inter.traffic_light.phase.name
@@ -254,12 +252,8 @@ class DemoRunner:
         progress = step / total_steps
         bar_w = int(VC.WINDOW_WIDTH * progress)
 
-        pygame.draw.rect(
-            self.screen, (40, 40, 40), pygame.Rect(0, bar_y, VC.WINDOW_WIDTH, bar_h)
-        )
-        pygame.draw.rect(
-            self.screen, (100, 200, 100), pygame.Rect(0, bar_y, bar_w, bar_h)
-        )
+        pygame.draw.rect(self.screen, (40, 40, 40), pygame.Rect(0, bar_y, VC.WINDOW_WIDTH, bar_h))
+        pygame.draw.rect(self.screen, (100, 200, 100), pygame.Rect(0, bar_y, bar_w, bar_h))
 
     def _show_results_screen(self, fixed_stats, rl_stats):
         """Show final comparison screen after both modes complete."""
@@ -271,22 +265,14 @@ class DemoRunner:
             self.screen.fill((15, 15, 25))
 
             # Title
-            title = self.big_font.render(
-                "RESULTS — RL vs Fixed Timer", True, (255, 255, 255)
-            )
+            title = self.big_font.render("RESULTS — RL vs Fixed Timer", True, (255, 255, 255))
             self.screen.blit(title, (VC.WINDOW_WIDTH // 2 - title.get_width() // 2, 60))
 
             # Calculate improvement
             wait_improvement = (
-                (fixed_stats["total_waiting"] - rl_stats["total_waiting"])
-                / fixed_stats["total_waiting"]
-                * 100
+                (fixed_stats["total_waiting"] - rl_stats["total_waiting"]) / fixed_stats["total_waiting"] * 100
             )
-            queue_improvement = (
-                (fixed_stats["avg_queue"] - rl_stats["avg_queue"])
-                / fixed_stats["avg_queue"]
-                * 100
-            )
+            queue_improvement = (fixed_stats["avg_queue"] - rl_stats["avg_queue"]) / fixed_stats["avg_queue"] * 100
 
             # Results table
             rows = [
@@ -333,9 +319,7 @@ class DemoRunner:
                 y += 40
 
             # Press any key message
-            msg = self.small_font.render(
-                "Press any key or close window to exit", True, (120, 120, 120)
-            )
+            msg = self.small_font.render("Press any key or close window to exit", True, (120, 120, 120))
             self.screen.blit(
                 msg,
                 (VC.WINDOW_WIDTH // 2 - msg.get_width() // 2, VC.WINDOW_HEIGHT - 40),
@@ -411,9 +395,7 @@ class DemoRunner:
         pygame.draw.rect(
             self.screen,
             VC.COLOR_INTERSECTION,
-            pygame.Rect(
-                cx - half, cy - half, intersection.box_size, intersection.box_size
-            ),
+            pygame.Rect(cx - half, cy - half, intersection.box_size, intersection.box_size),
         )
 
     def _draw_lights(self, intersection):
@@ -457,16 +439,10 @@ class DemoRunner:
 
     def _draw_one_vehicle(self, vehicle):
         rx, ry, rw, rh = vehicle.get_rect()
-        color = (
-            VC.COLOR_VEHICLE_NS
-            if vehicle.direction in ("N", "S")
-            else VC.COLOR_VEHICLE_EW
-        )
+        color = VC.COLOR_VEHICLE_NS if vehicle.direction in ("N", "S") else VC.COLOR_VEHICLE_EW
         if vehicle.is_stopped:
             color = tuple(max(0, c - 50) for c in color)
-        pygame.draw.rect(
-            self.screen, color, (int(rx), int(ry), max(2, int(rw)), max(2, int(rh)))
-        )
+        pygame.draw.rect(self.screen, color, (int(rx), int(ry), max(2, int(rw)), max(2, int(rh))))
 
 
 if __name__ == "__main__":
