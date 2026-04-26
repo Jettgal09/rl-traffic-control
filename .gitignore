@@ -104,6 +104,14 @@ logs/
 # Test Files
 test_sandbox.py
 
-RESEARCH_NOTES.md
+# Stray temp / backup files (e.g. *.research_v6_section.tmp)
+*.tmp
+*.bak
+*.swp
+*~
 
+# Personal / draft notes — kept off the public repo
+RESEARCH_NOTES.md
+PENDING_DISCUSSIONS.md
 myshi.md
+

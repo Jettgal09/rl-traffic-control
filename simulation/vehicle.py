@@ -17,6 +17,17 @@ class Vehicle:
         self.direction = direction
         self.lane = lane
 
+        # --- Origin (PHASE 2) ---
+        # The direction the car was FIRST spawned heading — locked in at
+        # construction and never mutated, even when _maybe_execute_turn
+        # flips self.direction mid-journey. The renderer uses this to pick
+        # a color per spawn-origin instead of per current heading, so you
+        # can visually track "this car entered from the west edge" all the
+        # way through its chain of turns across the grid.
+        # Also convenient for future metrics ("how many cars that entered
+        # from the north actually made it out?" — OD-matrix-lite).
+        self.spawn_direction = direction
+
         # --- Movement ---
         self.speed = SimConfig.VEHICLE_SPEED
         self.is_stopped = False
@@ -31,6 +42,19 @@ class Vehicle:
         # --- Size (for rendering) ---
         self.length = SimConfig.VEHICLE_LENGTH
         self.width = SimConfig.VEHICLE_WIDTH
+
+        # --- Turning (PHASE 2) ---
+        # Set by Intersection._process_lane_exits at the moment the vehicle
+        # crosses the stop line and enters crossing_vehicles — one of
+        # "straight"/"left"/"right", sampled from SimConfig.TURN_PROB_*.
+        # Consumed by Intersection._maybe_execute_turn once the vehicle's
+        # center has passed the intersection center: at that point we flip
+        # self.direction, snap (x, y) into the outgoing lane, and reset this
+        # field to None.
+        # Between intersections the field is None — each intersection rolls
+        # a fresh decision, so a single car's route is a chain of
+        # independent per-intersection turn samples.
+        self.intended_turn = None
 
     def update(self, can_move: bool, space_ahead: bool = True):
         """

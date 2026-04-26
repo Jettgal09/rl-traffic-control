@@ -36,11 +36,24 @@ class PygameRenderer:
         PARAMETERS:
           road — the Road object containing all simulation state
 
-        ORDER MATTERS:
-          We draw from background to foreground.
-          Roads first, then intersection box on top,
-          then traffic lights, then vehicles on top of everything,
-          then HUD text last so it's always readable.
+        ORDER MATTERS — DRAW IN STRICT LAYERS:
+          Earlier versions did "for each intersection: draw roads then box then
+          lights then vehicles" all in one pass. That's wrong for grid_size > 1
+          because each intersection's road strips span the entire screen, so
+          drawing roads for intersection (1,0) would paint over the intersection
+          BOX of (0,0) that was drawn a moment earlier — the box gets erased
+          and you see a continuous road where an intersection should be (the
+          "underpass/bridge" visual bug).
+          Fix: do ALL roads across ALL intersections first (pass 1), THEN all
+          intersection boxes (pass 2), THEN all lights and vehicles (pass 3).
+          That way every intersection box lands on top of every road strip.
+
+        LAYER ORDER (background → foreground):
+          1. Background fill
+          2. Roads + center lines (every intersection)
+          3. Intersection boxes (every intersection)
+          4. Traffic lights + vehicles (every intersection)
+          5. HUD text — always on top so it stays readable
         """
         # Handle window close button and ESC key
         for event in pygame.event.get():
@@ -52,17 +65,23 @@ class PygameRenderer:
                     self.close()
                     sys.exit()
 
-        # Clear screen with background color
+        # --- layer 1: clear screen ---
         self.screen.fill(VC.COLOR_BACKGROUND)
 
-        # Draw each intersection and everything around it
+        # --- layer 2: roads (and their center lines) for every intersection ---
         for intersection in road.intersections:
             self._draw_roads(intersection)
+
+        # --- layer 3: intersection boxes on top of all roads ---
+        for intersection in road.intersections:
             self._draw_intersection_box(intersection)
+
+        # --- layer 4: traffic lights + vehicles on top of everything ---
+        for intersection in road.intersections:
             self._draw_traffic_lights(intersection)
             self._draw_vehicles(intersection)
 
-        # Draw HUD on top of everything
+        # --- layer 5: HUD always on top ---
         self._draw_hud(road)
 
         # Push frame to screen
@@ -187,46 +206,102 @@ class PygameRenderer:
         """
         Draw all vehicles — both those waiting in lanes
         and those crossing through the intersection.
+
+        Vehicles in lanes are drawn as solid opaque rects. Vehicles in the
+        box are drawn semi-transparent (see VC.BOX_RENDER_ALPHA) so that
+        perpendicular crossings blend into each other visually instead of
+        stacking as opaque "crashes." The sim itself never sees this —
+        physics and metrics are computed from the true (x, y), unchanged.
         """
-        # Vehicles in approach lanes
+        # Vehicles in approach lanes — drawn solid at their real coordinates
         for lane_list in intersection.lanes.values():
             for lane in lane_list:
                 for vehicle in lane.vehicles:
                     if vehicle.active:
                         self._draw_single_vehicle(vehicle)
 
-        # Vehicles crossing the intersection box
+        # Vehicles crossing the intersection box — drawn with alpha blending
         for vehicle in intersection.crossing_vehicles:
             if vehicle.active:
-                self._draw_single_vehicle(vehicle)
+                self._draw_single_vehicle(vehicle, alpha=VC.BOX_RENDER_ALPHA)
 
-    def _draw_single_vehicle(self, vehicle):
+    # --- Spawn-origin → color lookup (PHASE 2) ---
+    # Keyed by vehicle.spawn_direction (the ORIGINAL heading, locked at spawn).
+    # A car whose spawn_direction is "N" is heading north, which means it
+    # entered from the SOUTH edge → FROM_S color. Same logic for the others.
+    # This mapping is a class-level constant so we don't rebuild the dict on
+    # every _draw_single_vehicle call (we draw 100+ cars per frame).
+    _SPAWN_COLOR = {
+        "N": VC.COLOR_VEHICLE_FROM_S,  # heading north ← came from south edge
+        "S": VC.COLOR_VEHICLE_FROM_N,  # heading south ← came from north edge
+        "E": VC.COLOR_VEHICLE_FROM_W,  # heading east  ← came from west edge
+        "W": VC.COLOR_VEHICLE_FROM_E,  # heading west  ← came from east edge
+    }
+
+    def _draw_single_vehicle(self, vehicle, alpha: int = None):
         """
         Draw one vehicle as a colored rectangle.
 
-        COLOR CODING:
-          Blue   — North or South traveling vehicles
-          Orange — East or West traveling vehicles
+        PARAMETERS:
+          vehicle — the Vehicle to draw
+          alpha   — optional 0-255 opacity. None = fully opaque (normal
+                    pygame.draw.rect path, fastest). When a value is given
+                    (e.g. VC.BOX_RENDER_ALPHA for cars inside the
+                    intersection box), we route through a SRCALPHA
+                    temporary surface so the paint actually blends with
+                    whatever is already on screen — that's the whole point
+                    of making crossing cars semi-transparent, so two
+                    overlapping rects composite instead of stacking opaquely.
+                    Slightly slower per call; only used for crossing cars
+                    (typically <30 on screen at once on a 3x3 grid), so the
+                    cost is invisible at 30 FPS.
 
-        Stopped vehicles are drawn slightly darker
-        so you can visually see where queues are forming.
+        COLOR CODING (by SPAWN ORIGIN, not current heading):
+          Cyan   — entered from south edge (spawned heading N)
+          Pink   — entered from north edge (spawned heading S)
+          Orange — entered from west edge  (spawned heading E)
+          Lime   — entered from east edge  (spawned heading W)
+
+        Why spawn origin and not current direction?
+          Once Phase 2 turning kicked in, a single car can flip through all
+          four headings across a 3x3 grid. If we colored by current heading
+          the car would change color mid-trip, which is useless for watching
+          flow. Coloring by origin lets you track one car visually the whole
+          way across the grid, and also gives an instant eyeball on balance —
+          "am I getting equal inflow from all four edges?".
+
+        Stopped vehicles are drawn slightly darker so you can visually see
+        where queues are forming.
         """
         rx, ry, rw, rh = vehicle.get_rect()
-        color = (
-            VC.COLOR_VEHICLE_NS
-            if vehicle.direction in ("N", "S")
-            else VC.COLOR_VEHICLE_EW
-        )
+
+        # Fall back to the old heading-based color if spawn_direction is
+        # missing (defensive — shouldn't happen once all vehicles go through
+        # the current constructor, but saves us a crash if some test stub
+        # constructs a bare Vehicle without it).
+        origin = getattr(vehicle, "spawn_direction", vehicle.direction)
+        color = self._SPAWN_COLOR.get(origin, VC.COLOR_VEHICLE_NS)
 
         # Darken color slightly if stopped
         if vehicle.is_stopped:
             color = tuple(max(0, c - 50) for c in color)
 
-        pygame.draw.rect(
-            self.screen,
-            color,
-            (int(rx), int(ry), max(2, int(rw)), max(2, int(rh)))
-        )
+        w = max(2, int(rw))
+        h = max(2, int(rh))
+
+        if alpha is None:
+            # --- Opaque path (lane cars) — fastest, straight to the screen ---
+            pygame.draw.rect(self.screen, color, (int(rx), int(ry), w, h))
+        else:
+            # --- Alpha-blended path (crossing cars) ---
+            # pygame.draw.rect on self.screen doesn't honor a 4th alpha
+            # channel — we have to paint onto a SRCALPHA surface first and
+            # blit it. Two overlapping semi-transparent blits composite
+            # correctly because the screen surface retains the first paint
+            # as the "below" layer when the second blit lands on top.
+            surf = pygame.Surface((w, h), pygame.SRCALPHA)
+            surf.fill((color[0], color[1], color[2], alpha))
+            self.screen.blit(surf, (int(rx), int(ry)))
 
     def _draw_hud(self, road):
         """

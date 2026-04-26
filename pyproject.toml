@@ -1,3 +1,11 @@
+[build-system]
+# Tells uv / pip how to build this project so it can be installed editably
+# into the venv. Without this, `uv sync` skips installing the project itself
+# and imports like `from env.traffic_env import TrafficEnv` fail from anywhere
+# but the project root. setuptools>=70 matches the floor in [project] deps.
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "reinforcement-learning-based-adaptive-traffic-signal-control-system"
 version = "0.1.0"
@@ -7,15 +15,15 @@ requires-python = ">=3.12"
 dependencies = [
     "gymnasium>=1.2.3",
     "matplotlib>=3.10.8",
-    "numpy>=2.4.3",
+    "numpy>=1.26",
     "pandas>=3.0.1",
     "pydantic>=2.12.5",
     "pygame>=2.6.1",
     "requests>=2.32.5",
     "rich>=14.3.3",
-    "setuptools>=82.0.1",
+    "setuptools>=70,<81",  # <81: tensorboard 2.20 still imports pkg_resources, removed from setuptools default install in 81
     "stable-baselines3>=2.7.1",
-    "tensorboard>=2.20.0",
+    "tensorboard>=2.16",
     "torch>=2.10.0",
     "tqdm>=4.67.3",
 ]
@@ -24,3 +32,6 @@ where = ["."]
 include = ["simulation*", "env*", "rl*", "utils*", "visualization*"]
 [tool.ruff]
 line-length = 120
+
+[dependency-groups]
+dev = []

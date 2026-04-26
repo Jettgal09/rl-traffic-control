@@ -11,13 +11,23 @@
 #     - Logging metrics to TensorBoard
 #
 # USAGE:
-#   uv run python rl/train.py --algo DQN
-#   uv run python rl/train.py --algo PPO
-#   uv run python rl/train.py --algo A2C
+#   uv run python rl/train.py --algo DQN                    # Phase 1 (1x1)
+#   uv run python rl/train.py --algo PPO                    # Phase 1 (1x1)
+#   uv run python rl/train.py --algo A2C                    # Phase 1 (1x1)
+#   uv run python rl/train.py --algo PPO --grid-size 2      # Phase 2 (2x2 sanity)
+#   uv run python rl/train.py --algo A2C --grid-size 3      # Phase 2 (3x3 full)
+#
+# ALGORITHM × GRID COMPATIBILITY:
+#   DQN only works with Discrete action spaces. For grid_size > 1 the env
+#   switches to MultiDiscrete, which DQN cannot handle — we raise a clear
+#   ValueError up front rather than let SB3 crash mid-training with a
+#   cryptic tensor error. Use PPO or A2C for multi-intersection.
 
 import os
+import random
 import argparse
 
+import numpy as np
 from stable_baselines3 import DQN, PPO, A2C
 from stable_baselines3.common.callbacks import (
     EvalCallback,
@@ -27,6 +37,7 @@ from stable_baselines3.common.callbacks import (
 from stable_baselines3.common.monitor import Monitor
 
 from env.traffic_env import TrafficEnv
+from rl.callbacks import TensorBoardRewardDiagnostics
 from utils.config import RLConfig
 
 # Maps string name to SB3 algorithm class
@@ -36,7 +47,7 @@ ALGORITHMS = {
     "A2C": A2C,
 }
 
-def make_env(spawn_rate: float = None):
+def make_env(grid_size: int = 1, spawn_rate: float = None):
     """
     Creates a monitored TrafficEnv.
 
@@ -44,15 +55,22 @@ def make_env(spawn_rate: float = None):
       SB3 expects a function that returns an environment.
       This pattern also makes it easy to create multiple
       identical environments later if needed.
+
+    PARAMETERS:
+      grid_size  — 1 for Phase 1 single intersection (byte-preserves
+                   phase1-paper-results). >1 for Phase 2 multi-intersection.
+      spawn_rate — override default spawn rate for experiments.
     """
-    env = TrafficEnv(grid_size=1, spawn_rate=spawn_rate)
+    env = TrafficEnv(grid_size=grid_size, spawn_rate=spawn_rate)
     env = Monitor(env)   # wrap with Monitor for automatic stat tracking
     return env
 
 
 def train(algorithm: str = "DQN",
           total_timesteps: int = None,
-          spawn_rate: float = None):
+          spawn_rate: float = None,
+          grid_size: int = 1,
+          seed: int = None):
     """
     Main training function.
 
@@ -60,12 +78,54 @@ def train(algorithm: str = "DQN",
       algorithm       — "DQN", "PPO", or "A2C"
       total_timesteps — how many steps to train for
       spawn_rate      — traffic density override for experiments
+      grid_size       — 1 for Phase 1, >1 for Phase 2. DQN does NOT support
+                        grid_size > 1 (see guard below).
+      seed            — None for non-reproducible (default), or an int for
+                        a reproducible run. When set we seed three sources:
+                        Python's stdlib random (used by vehicle_spawner),
+                        numpy (used everywhere in obs/reward math), and
+                        the SB3 algorithm (network init + rollout sampling).
+                        Without all three, "same seed" runs would still
+                        diverge because spawn_rate rolls would re-shuffle.
+                        Output goes to a seed-namespaced subdir so multi-seed
+                        runs don't clobber each other.
     """
+    # --- Fail fast on DQN + multi-intersection ---
+    # SB3's DQN is hardcoded to Discrete action spaces. TrafficEnv's action
+    # space switches to MultiDiscrete when grid_size > 1, which DQN cannot
+    # consume — without this guard the user would get a cryptic shape error
+    # from deep inside SB3's q-net forward pass 10-30 seconds into training,
+    # after the env has already been built and the TensorBoard run started.
+    # Better to refuse up front with a message that names the fix.
+    if algorithm == "DQN" and grid_size > 1:
+        raise ValueError(
+            f"DQN does not support grid_size > 1 (got grid_size={grid_size}). "
+            f"DQN requires a Discrete action space, but multi-intersection "
+            f"uses MultiDiscrete. Use PPO or A2C for Phase 2 training."
+        )
+
     total_timesteps = total_timesteps or RLConfig.TOTAL_TIMESTEPS
 
+    # --- SEED THE THREE RNGs (if --seed was passed) ---
+    # We seed BEFORE creating envs/models so every downstream construction
+    # — neural net init, env reset, vehicle spawn rolls — sees the same
+    # random state. Order doesn't matter, but doing it in one place up
+    # front means "did we seed?" is a single grep.
+    if seed is not None:
+        random.seed(seed)        # vehicle_spawner.py uses random.random()
+        np.random.seed(seed)     # belt-and-suspenders; SB3 also seeds via model kwarg
+
     # --- CREATE OUTPUT DIRECTORIES ---
-    # Where to save models and logs for this algorithm
-    results_dir  = f"experiments/{algorithm.lower()}_results"
+    # Namespaced by (algorithm, grid_size) so Phase 1 runs (grid1) and
+    # Phase 2 runs (grid2, grid3, ...) land in separate directories and
+    # don't clobber each other's checkpoints or TensorBoard logs.
+    #
+    # When --seed is given we add a /seed{N}/ subdir so multi-seed variance
+    # runs (the Phase 1 paper variance bars) each get their own home but
+    # still group under one parent — point TensorBoard at the parent and
+    # all seeds show up as separate runs in one chart.
+    base_dir     = f"experiments/{algorithm.lower()}_grid{grid_size}_results"
+    results_dir  = f"{base_dir}/seed{seed}" if seed is not None else base_dir
     model_dir    = f"{results_dir}/models"
     log_dir      = f"{results_dir}/logs"
     tb_log_dir   = f"{results_dir}/tensorboard"
@@ -77,8 +137,11 @@ def train(algorithm: str = "DQN",
     print(f"\n{'='*50}")
     print("  Traffic RL Training")
     print(f"  Algorithm  : {algorithm}")
+    print(f"  Grid size  : {grid_size}×{grid_size}  ({grid_size*grid_size} intersection{'s' if grid_size*grid_size > 1 else ''})")
     print(f"  Timesteps  : {total_timesteps:,}")
     print(f"  Spawn Rate : {spawn_rate or RLConfig.__dict__.get('SPAWN_RATE', 0.05)}")
+    print(f"  Seed       : {seed if seed is not None else 'unseeded (random)'}")
+    print(f"  Output dir : {results_dir}")
     print(f"{'='*50}\n")
 
     # --- CREATE ENVIRONMENTS ---
@@ -90,8 +153,8 @@ def train(algorithm: str = "DQN",
     #   During evaluation we want to measure the LEARNED policy only.
     #   If we used the training env, the exploration noise would
     #   corrupt our measurement of how good the agent actually is.
-    train_env = make_env(spawn_rate=spawn_rate)
-    eval_env  = make_env(spawn_rate=spawn_rate)
+    train_env = make_env(grid_size=grid_size, spawn_rate=spawn_rate)
+    eval_env  = make_env(grid_size=grid_size, spawn_rate=spawn_rate)
 
     # --- CREATE CALLBACKS ---
 
@@ -119,13 +182,28 @@ def train(algorithm: str = "DQN",
         verbose=1,
     )
 
-    callbacks = CallbackList([checkpoint_cb, eval_cb])
+    # 3. Reward-diagnostics callback (Phase 2)
+    # Forwards the env's per-intersection reward_min/mean/max/gap scalars
+    # from info → TensorBoard under the `custom/` namespace. These are how
+    # we'll spot the "mean hides a brutally congested intersection" failure
+    # mode from PENDING_DISCUSSIONS.md #1 without rerunning any training.
+    tb_diagnostics_cb = TensorBoardRewardDiagnostics()
+
+    callbacks = CallbackList([checkpoint_cb, eval_cb, tb_diagnostics_cb])
 
     # --- CREATE THE RL MODEL ---
     AlgorithmClass = ALGORITHMS[algorithm]
 
     # Get hyperparameters for this algorithm from config
     hyperparams = _get_hyperparams(algorithm, tb_log_dir)
+
+    # Pass seed to SB3 only when explicitly set — SB3 treats seed=None as
+    # "use a fresh random state every time," which is what we want when
+    # the user runs without --seed. When set, SB3 seeds (a) the policy
+    # network init, (b) the action sampler, and (c) the env via
+    # train_env.reset(seed=seed) on the first reset.
+    if seed is not None:
+        hyperparams = {**hyperparams, "seed": seed}
 
     # Create the model
     # This builds the neural network but doesn't start training yet
@@ -150,7 +228,7 @@ def train(algorithm: str = "DQN",
     )
 
     # --- SAVE FINAL MODEL ---
-    final_path = f"{model_dir}/{algorithm.lower()}_final"
+    final_path = f"{model_dir}/{algorithm.lower()}_grid{grid_size}_final"
     model.save(final_path)
 
     print(f"\n{'='*50}")
@@ -195,8 +273,17 @@ def _get_hyperparams(algorithm: str, tb_log_dir: str) -> dict:
             "n_epochs"      : RLConfig.PPO_N_EPOCHS,
             "gamma"         : RLConfig.PPO_GAMMA,
             "clip_range"    : RLConfig.PPO_CLIP_RANGE,
-            "ent_coef"      : 0.05,    # was 0.01 — forces more exploration
-            "policy_kwargs" : {"net_arch": [128, 128]},  # larger network
+            # ITERATION 2 tweaks (see RESEARCH_NOTES Phase 2):
+            #   ent_coef 0.05 → 0.01 — iteration 1 left PPO's policy at 94% of
+            #   max entropy after 500k steps because the entropy term was
+            #   dominating the policy gradient. 0.01 lets the distribution
+            #   actually collapse to preferences. 0.01 is also SB3's default.
+            "ent_coef"      : 0.01,
+            #   net_arch [128,128] → [256,256] — 2×2 diagnostic showed the
+            #   old net only had the capacity to learn four per-intersection
+            #   FIXED cycles, not state-adaptive control. Doubling width
+            #   gives room to represent action-depends-on-queue policies.
+            "policy_kwargs" : {"net_arch": [256, 256]},
             "verbose"       : 1,
             "tensorboard_log": tb_log_dir,
         }
@@ -204,9 +291,21 @@ def _get_hyperparams(algorithm: str, tb_log_dir: str) -> dict:
         return {
             "policy"        : "MlpPolicy",
             "learning_rate" : RLConfig.A2C_LEARNING_RATE,
-            "n_steps"       : RLConfig.A2C_N_STEPS,
+            # ITERATION 2: n_steps 5 → 20. A2C's iteration-1 run had
+            # explained_variance = −0.887 (critic worse than predicting the
+            # mean) because n_steps=5 returns are extremely noisy on the
+            # 2×2 reward signal. Longer rollouts give smoother advantage
+            # estimates for the critic to fit. Tradeoff: fewer policy
+            # updates per timestep, but each is better-informed. At 500k
+            # steps we still get 25k updates — plenty.
+            "n_steps"       : 20,
             "gamma"         : RLConfig.A2C_GAMMA,
             "ent_coef"      : 0.01,
+            # ITERATION 2: explicit [256,256] net. A2C previously used SB3's
+            # default (~[64,64]), too small for multi-intersection state-
+            # adaptive policies — see PPO note above for the same diagnosis.
+            # Matching PPO's new size keeps the two-algo comparison clean.
+            "policy_kwargs" : {"net_arch": [256, 256]},
             "verbose"       : 1,
             "tensorboard_log": tb_log_dir,
         }
@@ -237,6 +336,22 @@ def main():
         default=None,
         help="Vehicle spawn rate: 0.02=light, 0.05=normal, 0.10=heavy"
     )
+    parser.add_argument(
+        "--grid-size",
+        type=int,
+        default=1,
+        help="Number of intersections per side (1 = Phase 1, >1 = Phase 2). "
+             "DQN only supports grid_size=1; use PPO or A2C for larger grids."
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Random seed for reproducible runs. Seeds Python random, numpy, "
+             "and SB3 (network init + sampling). When set, output goes to "
+             "experiments/{algo}_grid{N}_results/seed{seed}/ so multi-seed "
+             "variance runs don't clobber each other. Omit for non-reproducible."
+    )
 
     args = parser.parse_args()
 
@@ -244,6 +359,8 @@ def main():
         algorithm=args.algo,
         total_timesteps=args.timesteps,
         spawn_rate=args.spawn_rate,
+        grid_size=args.grid_size,
+        seed=args.seed,
     )
 
 
